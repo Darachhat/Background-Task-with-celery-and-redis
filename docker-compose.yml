@@ -1,0 +1,59 @@
+services:
+# broker service
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
+    #disk queue persistence location
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - '15673:15672' # Management UI port mapping to host for access from browser or other tools
+    healthcheck:
+      test: ['CMD-SHELL', 'rabbitmq-diagnostics -q ping']
+      interval: 1m30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+
+# backend service
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli ping | grep PONG']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  celery_worker:
+    #build current directory
+    build: .
+    command: celery -A worker worker --loglevel=info
+    env_file: .env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  client:
+    #build currenlt directory
+    build: .
+    command: python client.py
+    env_file: .env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      celery_worker:
+        condition: service_started
+
+volumes:
+  rabbitmq_data:
+  redis_data:
